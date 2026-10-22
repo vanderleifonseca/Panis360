@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Panis360.Api/Panis360.Api.csproj" />
+    <Project Path="src/Panis360.Application/Panis360.Application.csproj" />
+    <Project Path="src/Panis360.Contracts/Panis360.Contracts.csproj" />
+    <Project Path="src/Panis360.Domain/Panis360.Domain.csproj" />
+    <Project Path="src/Panis360.Infrastructure/Panis360.Infrastructure.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Panis360.Application\Panis360.Application.csproj" />
+    <ProjectReference Include="..\Panis360.Infrastructure\Panis360.Infrastructure.csproj" />
+    <ProjectReference Include="..\Panis360.Contracts\Panis360.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>
