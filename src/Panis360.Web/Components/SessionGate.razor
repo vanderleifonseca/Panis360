@@ -1,0 +1,15 @@
+@inject ApiClient Api
+@if(Api.Session is null){<section class="card narrow"><h1>Entrar no Panis360</h1><p>Use a conta criada na preparação do projeto.</p>
+<EditForm Model="login" OnValidSubmit="Enter" FormName="login"><DataAnnotationsValidator />
+<label>E-mail<InputText @bind-Value="login.Email" type="email" /></label><label>Senha<span class="password"><InputText @bind-Value="login.Password" type="@(showPassword?"text":"password")" /><button type="button" class="secondary" @onclick="()=>showPassword=!showPassword">@(showPassword?"Ocultar":"Mostrar")</button></span></label>
+<button disabled="@busy">Entrar</button></EditForm><p role="alert" class="error">@error</p></section>}
+else if(Roles.Length>0 && !Api.HasRole(Roles)){<h1>Acesso restrito</h1><p>Seu perfil não tem permissão para este módulo.</p>}
+else {<div class="session"><span>@Api.Session.Name · @Api.Session.Role</span><button class="secondary" @onclick="Exit">Sair</button></div>@ChildContent}
+@code {
+ [Parameter] public RenderFragment? ChildContent{get;set;}
+ [Parameter] public string[] Roles{get;set;}=[];
+ LoginModel login=new();string error="";bool busy,showPassword;
+ async Task Enter(){busy=true;error="";try{await Api.Login(login.Email,login.Password);}catch(Exception e){error=e.Message;}finally{busy=false;}}
+ async Task Exit(){try{await Api.Logout();}catch(Exception e){error=e.Message;}}
+ class LoginModel {public string Email{get;set;}="admin@panis360.local";public string Password{get;set;}="";}
+}

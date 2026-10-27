@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "API C#",
+      "type": "dotnet",
+      "request": "launch",
+      "projectPath": "${workspaceFolder}/src/Panis360.Api/Panis360.Api.csproj"
+    },
+    {
+      "name": "Painel Blazor",
+      "type": "dotnet",
+      "request": "launch",
+      "projectPath": "${workspaceFolder}/src/Panis360.Web/Panis360.Web.csproj"
+    }
+  ]
+}

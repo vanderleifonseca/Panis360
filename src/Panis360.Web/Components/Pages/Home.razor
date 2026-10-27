@@ -1,0 +1,12 @@
+@page "/"
+@inject ApiClient Api
+<PageTitle>Panis360 · Início</PageTitle>
+<SessionGate><h1>Visão geral</h1><p>Pedidos, estoque e recebimentos em um só lugar.</p>
+@if(Api.HasRole("Administrador")) {
+<button @onclick="Load">Atualizar indicadores</button>
+@if(data!=null){<div class="metrics"><section class="card"><small>Clientes</small><strong>@data.Customers</strong></section><section class="card"><small>Pedidos</small><strong>@data.Orders</strong></section><section class="card"><small>Vendas acumuladas</small><strong>@Money(data.Sales)</strong></section><section class="card"><small>Saldo a receber</small><strong>@Money(data.OpenBalance)</strong></section></div><p>Lotes com validade até 7 dias, incluindo vencidos: @data.ExpiringLots</p>}
+} else {<p>Acesse os módulos autorizados no menu.</p>}
+<p class="error" role="alert">@error</p>
+<section class="card"><h2>Primeira operação</h2><ol><li>Cadastre um vendedor em Configurações.</li><li>Cadastre um cliente e um produto.</li><li>Registre a entrada de um lote no Estoque.</li><li>Crie um pedido, ajuste o corte e confirme a venda.</li><li>Confira as parcelas em Contas a receber.</li></ol></section>
+</SessionGate>
+@code {DashboardDto? data;string error="";async Task Load(){try{data=await Api.Get<DashboardDto>("/api/dashboard");error="";}catch(Exception e){error=e.Message;}}string Money(decimal v)=>v.ToString("C",System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));}

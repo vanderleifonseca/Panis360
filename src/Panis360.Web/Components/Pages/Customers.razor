@@ -1,0 +1,20 @@
+@page "/clientes"
+@inject ApiClient Api
+<SessionGate Roles="@(new[]{"Administrador","Vendedor"})"><h1>Clientes e roteiro</h1><button @onclick="Load">Carregar / atualizar</button><p class="error">@error</p><p role="status">@message</p>
+<section class="card"><h2>Novo cliente</h2><EditForm Model="form" OnValidSubmit="Save" FormName="customer"><DataAnnotationsValidator /><ValidationSummary /><div class="grid">
+<label>Nome / razão social<InputText @bind-Value="form.Name" /></label><label>CPF / CNPJ<InputText @bind-Value="form.Document" /></label><label>Telefone<InputText @bind-Value="form.Phone" /></label>
+<label>Logradouro<InputText @bind-Value="form.Street" /></label><label>Número<InputText @bind-Value="form.Number" /></label><label>Bairro<InputText @bind-Value="form.Neighborhood" /></label>
+<label>Cidade<InputText @bind-Value="form.City" /></label><label>UF<InputText @bind-Value="form.State" /></label><label>CEP<InputText @bind-Value="form.ZipCode" /></label>
+<label>Sequência de visita<InputNumber @bind-Value="form.VisitOrder" /></label>
+@if(Api.HasRole("Administrador")){<label>Vendedor<InputSelect @bind-Value="form.SellerId"><option value="@Guid.Empty">Selecione</option>@foreach(var s in sellers){<option value="@s.Id">@s.Name</option>}</InputSelect></label>}
+</div><button disabled="@busy">Salvar cliente</button></EditForm></section>
+<table><thead><tr><th>Ordem</th><th>Cliente</th><th>Documento</th><th>Cidade</th><th>Situação</th><th>Ação</th></tr></thead><tbody>
+@foreach(var c in customers){<tr><td>@c.VisitOrder</td><td>@c.Name</td><td>@c.Document</td><td>@c.City / @c.State</td><td>@(c.Blocked?"Bloqueado":"Ativo")</td><td><button @onclick="()=>Visit(c)">Registrar visita</button>@if(Api.HasRole("Administrador")){<button class="secondary" @onclick="()=>Block(c)">@(c.Blocked?"Desbloquear":"Bloquear")</button>}</td></tr>}
+</tbody></table></SessionGate>
+@code {
+ CustomerInput form=new();List<CustomerDto> customers=[];List<SellerDto>sellers=[];string error="",message="";bool busy;
+ async Task Load(){try{customers=await Api.Get<List<CustomerDto>>("/api/customers");sellers=await Api.Get<List<SellerDto>>("/api/sellers");error="";}catch(Exception e){error=e.Message;}}
+ async Task Save(){busy=true;try{await Api.Post("/api/customers",form);form=new();message="Cliente cadastrado.";await Load();}catch(Exception e){error=e.Message;}finally{busy=false;}}
+ async Task Visit(CustomerDto c){try{await Api.Post("/api/visits",new VisitInput(c.Id,"Visita registrada pelo painel"));message="Visita registrada para "+c.Name;}catch(Exception e){error=e.Message;}}
+ async Task Block(CustomerDto c){try{await Api.Put($"/api/customers/{c.Id}/block?blocked={(!c.Blocked).ToString().ToLowerInvariant()}",new{});await Load();}catch(Exception e){error=e.Message;}}
+}

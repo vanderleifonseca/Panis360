@@ -1,0 +1,97 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Panis360: compilar backend e painel",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "Panis360.sln"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Panis360: API",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "src/Panis360.Api",
+        "--launch-profile",
+        "http"
+      ],
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Panis360: API (Wi-Fi)",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "src/Panis360.Api",
+        "--launch-profile",
+        "wifi"
+      ],
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Panis360: painel",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "src/Panis360.Web",
+        "--launch-profile",
+        "http"
+      ],
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Panis360: acesso do celular (USB)",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "scripts/Celular.ps1"
+      ],
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Panis360: testes",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "tests/Panis360.Tests"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Panis360: compilar Android",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "src/Panis360.App",
+        "-f",
+        "net10.0-android"
+      ],
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}

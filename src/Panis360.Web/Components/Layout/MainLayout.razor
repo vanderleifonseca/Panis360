@@ -1,0 +1,10 @@
+@inherits LayoutComponentBase
+@inject ApiClient Api
+<div class="shell"><aside><a class="brand" href="/">Panis<span>360</span></a><p>Distribuição de panificação</p><nav>
+<NavLink href="/" Match="NavLinkMatch.All">Início</NavLink>
+<NavLink href="/clientes">Clientes e roteiro</NavLink><NavLink href="/produtos">Produtos</NavLink>
+<NavLink href="/pedidos">Pedidos e cortes</NavLink><NavLink href="/estoque">Estoque por lote</NavLink>
+<NavLink href="/financeiro">Contas a receber</NavLink><NavLink href="/configuracoes">Configurações</NavLink>
+</nav><small>Ambiente de desenvolvimento</small></aside>
+<main><header>Gestão comercial e distribuição <span>@(Api.Session?.Name??"Acesso restrito")</span></header><article>@Body</article></main></div>
+<div id="blazor-error-ui">Ocorreu uma falha. <a href="">Recarregar</a></div>

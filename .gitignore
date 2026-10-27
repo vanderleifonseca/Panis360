@@ -1,22 +1,11 @@
-# Arquivos locais e segredos
-.vs/
-.vscode/
 **/bin/
 **/obj/
-*.user
-*.suo
+.vs/
 .env
-.env.*
-!.env.example
-appsettings.*.local.json
-*.pfx
-*.p12
-*.key
 *.db
 *.db-shm
 *.db-wal
-*.sqlite
-*.sqlite3
-TestResults/
-.DS_Store
-Thumbs.db
+*.user
+artifacts/
+**/appsettings.Local.json
+*.db.bak*
