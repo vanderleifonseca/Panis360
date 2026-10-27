@@ -1,23 +1,29 @@
 ---
-name: Tarefa do projeto
-about: Planejar uma entrega com requisito e aceite
-title: "[E0] Descreva a tarefa"
+name: Tarefa
+about: Nova funcionalidade ou melhoria
+title: "[Tarefa] "
+labels: enhancement
 ---
 
 ## Objetivo
 
-Descreva o comportamento esperado.
+O que deve passar a acontecer e para qual perfil (Administrador, Vendedor, Estoque, Financeiro).
 
-## Referências
+## Módulo
 
-Entrega, RF/RN e decisões relacionadas.
+- [ ] API
+- [ ] Painel (Blazor)
+- [ ] App (MAUI)
+- [ ] Banco / modelo de dados
+- [ ] Documentação
 
 ## Critérios de aceite
 
 - [ ] Resultado observável descrito.
-- [ ] Cenário de erro considerado.
-- [ ] Documentação atualizada.
+- [ ] Cenário de erro ou de permissão negada considerado.
+- [ ] Teste em `tests/Panis360.Tests` quando a regra permitir.
+- [ ] Documentação em `docs/` atualizada.
 
-## Dependências e validação
+## Referências
 
-Informe pendências, abordagem de teste e evidências esperadas.
+Regra em `docs/03-regras-negocio.md`, decisão pendente (D01–D13) em `docs/08-roadmap.md` ou issue relacionada.

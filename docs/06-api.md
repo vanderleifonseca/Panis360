@@ -1,58 +1,117 @@
-# 06 — Contratos iniciais da API
+# 06 — API
 
-Proposta para implementação. Nenhum endpoint está disponível ainda. Prefixo `/api/v1`; JSON em UTF-8; UUID para IDs; instantes ISO 8601 em UTC; datas de vencimento sem conversão de fuso; valores monetários decimais. OpenAPI será gerado após E1.
+URL local: `http://localhost:5207`. JSON em UTF-8, identificadores GUID. Exceto `/health` e `/auth/login`, todas as rotas exigem `Authorization: Bearer TOKEN`. Os modelos de requisição e resposta estão em `src/Panis360.Contracts/Models.cs`.
 
-| Operação | Endpoint proposto | Autorização |
+## Códigos de resposta
+
+| Código | Quando |
+| --- | --- |
+| 200 / 204 | Sucesso (204 sem corpo) |
+| 400 | Regra de negócio ou validação. Corpo: `{"error": "mensagem"}` |
+| 401 | Sem token, token expirado ou usuário inativo |
+| 403 | Perfil sem permissão |
+| 409 | Conflito de concorrência ou registro duplicado |
+| 429 | Limite de tentativas de login |
+| 500 | Falha interna (detalhe apenas no log da API) |
+
+## Endpoints
+
+### Público
+
+| Método | Rota | Descrição |
 | --- | --- | --- |
-| Autenticar/renovar | Contrato de identidade a definir em E1 | Identidade |
-| Consultar carteira | GET /clientes | Vendedor filtrado ou comercial |
-| Consultar catálogo | GET /catalogo | Usuário autorizado |
-| Consultar roteiro | GET /roteiros | Vendedor filtrado ou comercial |
-| Registrar visita | POST /visitas | Vendedor da carteira |
-| Receber pedido | POST /pedidos | Vendedor da carteira |
-| Consultar pedido | GET /pedidos/{id} | Carteira ou central |
-| Analisar janela | GET /janelas/{id}/demanda | Central |
-| Simular corte | POST /janelas/{id}/cortes/simulacoes | Supervisor |
-| Confirmar corte | POST /janelas/{id}/cortes | Supervisor |
-| Conferir separação | POST /separacoes/{id}/conferencias | Estoque |
-| Registrar documento externo | POST /vendas/{id}/documentos-fiscais | Faturamento autorizado |
-| Confirmar saída | POST /cargas/{id}/expedicoes | Logística |
-| Registrar entrega | POST /entregas | Logística |
-| Consultar títulos | GET /titulos | Financeiro ou carteira autorizada |
-| Registrar recebimento | POST /recebimentos | Financeiro |
-| Registrar estorno | POST /recebimentos/{id}/estornos | Financeiro autorizado |
-| Obter mudanças | GET /sincronizacao?cursor=... | Escopo do usuário |
+| GET | `/health` | `{"status":"ok","system":"Panis360"}` |
+| POST | `/auth/login` | `{email, password}` → `{token, userId, name, role, expiresAt}`. Até 10 por minuto por IP |
 
-## Exemplo ilustrativo de pedido
+### Sessão e usuários
 
-Os UUIDs abaixo são fictícios. Cliente/vendedor são revalidados pelo servidor; não confiar em identidade enviada no corpo.
+| Método | Rota | Perfis | Descrição |
+| --- | --- | --- | --- |
+| POST | `/api/logout` | Autenticado | Encerra a sessão atual |
+| GET | `/api/sellers` | Administrador, Vendedor | Usuários ativos que podem ter carteira |
+| POST | `/api/users` | Administrador | Cria usuário: `{name, email, password (12+), role}` |
 
-```json
+### Clientes e visitas
+
+| Método | Rota | Perfis | Descrição |
+| --- | --- | --- | --- |
+| GET | `/api/customers` | Autenticado | Lista por ordem de visita; o vendedor vê só a carteira dele |
+| POST | `/api/customers` | Administrador, Vendedor | Cria cliente; o vendedor sempre cria na própria carteira |
+| PUT | `/api/customers/{id}/block?blocked=true\|false` | Administrador | Bloqueia ou desbloqueia |
+| GET | `/api/visits` | Administrador, Vendedor | Visitas (o vendedor vê as próprias) |
+| POST | `/api/visits` | Administrador, Vendedor | `{customerId, note}`; o cliente precisa ser da carteira |
+
+### Catálogo e estoque
+
+| Método | Rota | Perfis | Descrição |
+| --- | --- | --- | --- |
+| GET | `/api/products` | Autenticado | Produtos ativos com `available` (estoque válido) |
+| POST | `/api/products` | Administrador | `{name, group, unit: UN\|KG\|L, price, active}` |
+| GET | `/api/lots` | Administrador, Estoque | Lotes por validade, com `revision` |
+| POST | `/api/lots` | Administrador, Estoque | Entrada: `{productId, code, expiresOn, quantity}` |
+| PUT | `/api/lots/{id}` | Administrador, Estoque | Ajuste: `{code, expiresOn, quantity, reason, revision}` |
+| GET | `/api/lots/{id}/movements` | Administrador, Estoque | Histórico com saldo após cada movimentação e usuário |
+
+### Condições de pagamento
+
+| Método | Rota | Perfis | Descrição |
+| --- | --- | --- | --- |
+| GET | `/api/terms` | Autenticado | Condições com as parcelas `{days, percent}` |
+| POST | `/api/terms` | Administrador | `{name, parts:[{days, percent}]}`; os percentuais somam 100 |
+
+### Pedidos e venda
+
+| Método | Rota | Perfis | Descrição |
+| --- | --- | --- | --- |
+| GET | `/api/orders` | Autenticado | Mais recentes primeiro; o vendedor vê só os próprios |
+| POST | `/api/orders` | Administrador, Vendedor | Cria o pedido (idempotente por `clientRequestId`); devolve o id |
+| PUT | `/api/orders/{id}/cut` | Administrador, Estoque | `{reason, items:[{itemId, accepted}]}` |
+| POST | `/api/orders/{id}/sell` | Administrador, Estoque | Confirma a venda; devolve o id da venda (idempotente) |
+| POST | `/api/orders/{id}/cancel` | Administrador | Cancela um pedido Recebido |
+
+### Financeiro
+
+| Método | Rota | Perfis | Descrição |
+| --- | --- | --- | --- |
+| GET | `/api/receivables` | Administrador, Financeiro, Vendedor | Parcelas por vencimento; o vendedor vê as da carteira |
+| POST | `/api/receivables/{id}/receive` | Administrador, Financeiro | `{requestId, amount}` (idempotente por `requestId`) |
+
+### Administração
+
+| Método | Rota | Perfis | Descrição |
+| --- | --- | --- | --- |
+| GET | `/api/dashboard` | Administrador | `{customers, orders, sales, openBalance, expiringLots}` |
+| GET | `/api/audit` | Administrador | Últimos 200 eventos de auditoria |
+
+## Exemplo: login e pedido
+
+```http
+POST /auth/login
+Content-Type: application/json
+
+{ "email": "vendedor@exemplo.local", "password": "senha-com-12-caracteres" }
+```
+
+```http
+POST /api/orders
+Authorization: Bearer 3F9A...
+Content-Type: application/json
+
 {
-  "id": "11111111-1111-4111-8111-111111111111",
-  "clienteId": "22222222-2222-4222-8222-222222222222",
-  "coletadoEm": "2026-10-21T14:00:00Z",
-  "catalogoVersao": "versao-exemplo",
-  "condicaoPagamentoId": "33333333-3333-4333-8333-333333333333",
-  "itens": [
-    {
-      "produtoId": "44444444-4444-4444-8444-444444444444",
-      "embalagemId": "55555555-5555-4555-8555-555555555555",
-      "quantidadeSolicitada": 10,
-      "precoUnitarioColetado": 100.00
-    }
+  "clientRequestId": "11111111-1111-4111-8111-111111111111",
+  "customerId": "22222222-2222-4222-8222-222222222222",
+  "paymentTermId": "33333333-3333-4333-8333-333333333333",
+  "paymentMethod": "Boleto",
+  "items": [
+    { "productId": "44444444-4444-4444-8444-444444444444", "quantity": 12 }
   ]
 }
 ```
 
-Enviar `Idempotency-Key` estável por operação. Primeira criação: 201 e localização do recurso. Repetição equivalente: resposta persistida equivalente, sem nova gravação comercial. Conteúdo diferente sob a mesma chave: 409. Estoque insuficiente não rejeita a coleta; divergência de preço coloca o pedido em revisão.
+Os identificadores acima são fictícios. Não envie preço: o servidor usa o preço atual do produto. Repetir a mesma requisição devolve o mesmo id de pedido.
 
-## Concorrência e falhas
+## Observações
 
-- ETag/If-Match ou versão equivalente para mutações sobre recursos existentes.
-- Simulação de corte não reserva; confirmação revalida a versão do estoque e cria reservas atomicamente.
-- 400: formato inválido; 401: não autenticado; 403: sem acesso; 404: recurso inexistente ou não visível; 409: conflito de versão/idempotência; 422: regra de negócio; 429: limite; 503: indisponibilidade transitória.
-- Respostas de erro usam Problem Details, código estável e correlationId, sem stack trace ou segredos.
-- Listas paginadas com limite máximo definido; cursor de sincronização é opaco. Resposta inclui `nextCursor`, `hasMore` e mudanças/inativações.
-- Finalizar página local e cursor na mesma transação evita perder alterações após interrupção.
-- Webhooks futuros exigirão verificação de autenticidade e idempotência; dados do provedor não são aceitos como autorização do usuário.
+- O servidor define preço, vendedor e total; dados de identidade enviados no corpo não são usados para autorização.
+- Os vencimentos partem da data da confirmação da venda, não da data do pedido.
+- Não há versionamento de rota (`/api/v1`), paginação nem OpenAPI nesta versão.

@@ -1,58 +1,118 @@
-# 04 — Arquitetura e sincronização
+# 04 — Arquitetura
 
-Status: proposta técnica, detalhada no ADR 001.
+Monólito modular em .NET 10. O aplicativo e o painel consomem a mesma API, e **somente a API acessa o banco central**. A justificativa da decisão está no [ADR 001](adr/001-arquitetura.md).
 
 ```mermaid
 flowchart TD
-    M["Android MAUI e SQLite"] --> A["API ASP.NET Core"]
-    W["Administrativo Blazor"] --> A
-    A --> D["Domínio e casos de uso"]
-    D --> P["PostgreSQL"]
-    D --> J["Processamento em segundo plano"]
-    J --> X["Adaptadores fiscais e bancários futuros"]
+    subgraph Clientes
+      App["Panis360.App<br/>MAUI Android/Windows<br/>SQLite local + SecureStorage"]
+      Web["Panis360.Web<br/>Blazor Interactive Server"]
+    end
+    App -->|HTTP JSON + Bearer| Api
+    Web -->|HttpClient no servidor + Bearer| Api
+    Api["Panis360.Api<br/>endpoints, autenticação, autorização"] --> Infra["Panis360.Infrastructure<br/>AppDb + Operations"]
+    Infra --> App2["Panis360.Application<br/>Rules"]
+    Infra --> Dom["Panis360.Domain<br/>entidades"]
+    Infra --> Db[("SQLite ou PostgreSQL")]
+    App -.-> Con["Panis360.Contracts<br/>DTOs"]
+    Web -.-> Con
+    Api -.-> Con
 ```
 
-## Organização prevista
+## Projetos
 
-| Projeto futuro | Responsabilidade | Dependências internas |
+| Projeto | Responsabilidade | Depende de |
 | --- | --- | --- |
-| Panificacao.Domain | Entidades e invariantes | Nenhuma |
-| Panificacao.Application | Casos de uso e interfaces | Domain |
-| Panificacao.Contracts | DTOs e contratos públicos | Nenhuma dependência de infraestrutura |
-| Panificacao.Infrastructure | EF Core, persistência e adaptadores | Application e Domain |
-| Panificacao.Api | HTTP, composição e autorização | Application, Infrastructure e Contracts |
-| Panificacao.Web | Administrativo Blazor | Contracts e cliente HTTP |
-| Panificacao.App | Android, SQLite e fila local | Contracts e cliente HTTP |
-| Panificacao.Tests | Testes por nível | Projetos conforme escopo |
+| `Panis360.Domain` | Entidades persistidas (`Entities.cs`) | — |
+| `Panis360.Contracts` | DTOs de entrada e saída, com validação por DataAnnotations; sem Entity Framework | — |
+| `Panis360.Application` | Regras puras: dinheiro, quantidades, parcelamento, listas de perfis e formas (`Rules.cs`) | Contracts |
+| `Panis360.Infrastructure` | `AppDb` (DbContext), operações transacionais (`Operations.cs`), atualização de esquema (`SchemaUpgrade.cs`) | Application, Domain |
+| `Panis360.Api` | Minimal API, autenticação por sessão, políticas por perfil, tratamento de erros, criação inicial | Infrastructure, Contracts |
+| `Panis360.Web` | Painel administrativo; `ApiClient` guarda a sessão por circuito | Contracts |
+| `Panis360.App` | App de vendas; `MobileApi`, `LocalStore` (SQLite), `MainPage` (UI em código) | Contracts |
+| `Panis360.Tests` | Verificações executáveis com SQLite temporário; também gera o script PostgreSQL | Infrastructure |
 
-Blazor com processamento no servidor é o ponto de partida proposto para o administrativo online. O web não deve acessar o banco por conta própria, contornando a API. Modelos EF e entidades internas não serão enviados diretamente aos clientes.
+`Panis360.App` fica fora de `Panis360.sln` para que o backend compile sem workloads móveis.
 
-## Sincronização
+## Autenticação e autorização
 
-1. Autenticação inicial online; carregar somente carteira autorizada e catálogo.
-2. Gravar pedido e fila de envio na mesma transação SQLite.
-3. Criar UUID do pedido no aparelho, preservado em todas as tentativas.
-4. Enviar com chave de idempotência; API autentica, valida carteira e versão.
-5. API grava pedido e resultado idempotente na mesma transação.
-6. Aplicativo confirma recebimento apenas após resposta válida; timeout permite reenvio seguro.
-7. Erros transitórios usam espera progressiva; erros de negócio exigem ação do usuário.
-8. Atualizações descendentes usam cursor opaco, paginação e marcações de inativação.
+- **Senhas:** `PasswordHasher<User>` do ASP.NET Core Identity, com no mínimo 12 caracteres.
+- **Login:** `POST /auth/login` devolve um token aleatório de 256 bits. O banco guarda **apenas o hash SHA-256** do token. A sessão vale 12 horas.
+- **Requisições:** cabeçalho `Authorization: Bearer TOKEN`, validado pelo `SessionAuth`, que também confere se o usuário está ativo.
+- **Logout:** `POST /api/logout` apaga a sessão no servidor.
+- **Limite de login:** 10 tentativas por minuto por IP (resposta 429).
+- **Políticas:**
 
-Mesma chave + mesmo conteúdo retorna o mesmo resultado; mesma chave + conteúdo diferente retorna conflito. A restrição única no banco é a proteção final contra duas requisições simultâneas. A política de retenção da chave deve cobrir toda a vida de reenvio do pedido.
+| Política | Perfis |
+| --- | --- |
+| `Admin` | Administrador |
+| `Commercial` | Administrador, Vendedor |
+| `Warehouse` | Administrador, Estoque |
+| `Finance` | Administrador, Financeiro |
 
-## Conflitos e acesso offline
+Além das políticas, os endpoints filtram por carteira: o vendedor só vê os próprios clientes, pedidos e títulos.
 
-- Preço/condição desatualizados: encaminhar para revisão comercial e apresentar diferença.
-- Cliente transferido de carteira: rejeitar novo envio sem autorização; preservar a coleta local para resolução pelo supervisor.
-- Cadastro central vence em campos cadastrais; aplicativo não sobrescreve alterações sem versão válida.
-- Logout exige informar pendências locais; não apagar pedidos não sincronizados sem tratamento explícito.
-- Credenciais revogadas impedem novos envios. Prazo de acesso offline será definido em D11; o servidor revalida toda operação.
-- Resumo financeiro sempre exibe a data de atualização e pode estar desatualizado.
+- **Sem senha fixa no código:** o administrador inicial vem de `Bootstrap:Email` e `Bootstrap:Password` (user-secrets ou variável de ambiente) e só é criado em banco sem usuários.
 
-## Consistência e operação
+## Tratamento de erros
 
-Reservas e cortes usam transações e bloqueio/controle de concorrência por saldo elegível; não confiar em leitura seguida de gravação sem proteção. Integrações externas usam eventos persistidos (outbox), repetição segura e reconciliação. Não manter transação do banco aberta durante chamada ao provedor externo.
+Um middleware converte as exceções em JSON `{"error": "mensagem"}`:
 
-Segredos em armazenamento seguro do servidor e do dispositivo; dados locais sensíveis devem ter proteção compatível com o risco. Definir estratégia de criptografia local e perda de aparelho antes do piloto. Datas de negócio usam fuso configurado; instantes de auditoria usam UTC.
+| Exceção | HTTP |
+| --- | --- |
+| `BusinessException` (regra de negócio) | 400 |
+| `DbUpdateConcurrencyException` | 409, "Dados alterados por outro usuário…" |
+| `DbUpdateException` (duplicidade, chave) | 409 |
+| Qualquer outra | 500, com o detalhe apenas no log |
 
-Versões de SDK, MAUI, Android, EF Core e provedor PostgreSQL serão verificadas e fixadas em E1. Não há comandos de compilação válidos antes da criação dos projetos.
+## Persistência
+
+- **SQLite** é o padrão de demonstração (`panis360.db`), para rodar sem instalar servidor.
+- **PostgreSQL** é o destino para operação real, escolhido por `Database:Provider`.
+- Em Development, `EnsureCreated` cria o esquema em banco vazio, e `SchemaUpgrade` aplica as alterações incrementais idempotentes (hoje: a coluna `Movements.ActorId`). `EnsureCreated` **não** atualiza bancos existentes de outras formas.
+- Fora de Development, o esquema precisa existir (`database/postgresql-inicial.sql`).
+- Antes de uso real com dados, adotar **migrations do EF Core** e rotina de backup e restauração.
+- As transações de venda e recebimento usam isolamento **Serializable**.
+
+## Painel web
+
+- Blazor com renderização interativa no servidor (SignalR). O navegador nunca recebe o token da API.
+- A sessão vive na memória do circuito: recarregar a página por completo exige novo login.
+- O componente `SessionGate` exibe o login e bloqueia telas por perfil. A API revalida as permissões em todas as chamadas.
+- Fora de Development, ativa HTTPS, HSTS e uma página de erro.
+
+## Aplicativo offline
+
+```mermaid
+sequenceDiagram
+    participant V as Vendedor
+    participant A as App (SQLite)
+    participant S as API
+    V->>A: Atualizar carteira e catálogo
+    A->>S: GET customers, products, terms, orders, receivables
+    S-->>A: dados da carteira
+    A->>A: grava cache por usuário
+    V->>A: Salvar pedido na fila local (sem rede)
+    A->>A: PendingOrder com ClientRequestId
+    V->>A: Sincronizar pedidos pendentes
+    A->>S: POST /api/orders (mesmo ClientRequestId)
+    alt aceito ou já recebido
+      S-->>A: id do pedido
+      A->>A: remove da fila
+    else recusado
+      S-->>A: erro
+      A->>A: mantém na fila com o motivo
+    end
+```
+
+- **Sessão** em `SecureStorage`; **endereço da API** em `Preferences` (padrão `http://127.0.0.1:5207`); tempo limite de 25 s.
+- **Banco local** `panis360-local.db`, com as tabelas `CachedData` (cache JSON por chave `usuário:nome`) e `PendingOrder` (fila separada por usuário).
+- A troca de usuário limpa a memória; o cache só é lido pelo mesmo usuário.
+- O carrinho fica **só em memória** até tocar em *Salvar pedido na fila local*.
+- A sincronização é **manual**. Cadastro de cliente e registro de visita exigem conexão.
+- A base local **não** tem criptografia adicional; o aparelho precisa de bloqueio de tela.
+- HTTP só é liberado no manifesto Android de Debug.
+
+## Integração contínua
+
+`.github/workflows/build.yml` roda a cada push e pull request, no Ubuntu com .NET 10.x: `restore` → `build` (Release) → `tests/Panis360.Tests`. O app MAUI não é compilado no CI.

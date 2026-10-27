@@ -1,67 +1,65 @@
-# 05 — Modelo conceitual de dados
+# 05 — Modelo de dados
 
-Proposta de entidades e vínculos; ainda não é um esquema SQL nem uma migration aprovada. IDs de entidades de domínio: UUID. Número comercial sequencial será separado do identificador técnico. Todas as entidades mutáveis relevantes terão controle de versão.
+Entidades em `src/Panis360.Domain/Entities.cs`, configuradas em `src/Panis360.Infrastructure/AppDb.cs`. Todos os identificadores são `Guid`. Instantes ficam em UTC; datas de negócio (validade, venda, vencimento) são `DateOnly`. Todo `decimal` tem precisão `(18,3)`.
 
-| Entidade | Campos principais e vínculos |
+```mermaid
+erDiagram
+    Users ||--o{ Sessions : "abre"
+    Users ||--o{ Customers : "carteira (SellerId)"
+    Customers ||--o{ Orders : "faz"
+    Users ||--o{ Orders : "vende (SellerId)"
+    Terms ||--o{ TermParts : "parcelas"
+    Terms ||--o{ Orders : "condição"
+    Orders ||--|{ OrderItem : "itens"
+    Products ||--o{ OrderItem : ""
+    Products ||--o{ Lots : "lotes"
+    Lots ||--o{ Movements : "movimentações"
+    Orders ||--o| Sales : "gera (1 venda)"
+    Sales ||--|{ Receivables : "parcelas"
+    Receivables ||--o{ Receipts : "recebimentos"
+    Customers ||--o{ Visits : "visitas"
+```
+
+## Tabelas
+
+| Tabela (entidade) | Campos | Restrições |
+| --- | --- | --- |
+| `Users` (User) | Name, Email, PasswordHash, Role, Active | Email único |
+| `Sessions` (Session) | TokenHash, UserId, ExpiresAt | TokenHash único; FK Users |
+| `Customers` (Customer) | Name, Document, Phone, Street, Number, Neighborhood, City, State, ZipCode, SellerId, VisitOrder, Blocked | Document único; FK Users (vendedor) |
+| `Products` (Product) | Name, Group, Unit, Price, Active | — |
+| `Lots` (StockLot) | ProductId, Code, ExpiresOn, Quantity, Revision | (ProductId, Code) único; Revision é token de concorrência |
+| `Movements` (StockMovement) | StockLotId, SaleId?, ActorId?, Quantity (positiva = entrada, negativa = saída), Date, Reason | FK Lots |
+| `Terms` (PaymentTerm) | Name | — |
+| `PaymentTermPart` | PaymentTermId, Days, Percent | FK Terms |
+| `Orders` (Order) | ClientRequestId, RequestHash, CustomerId, SellerId, PaymentTermId, PaymentMethod, CreatedAt, Status, Revision, CutReason | ClientRequestId único; Revision é token de concorrência |
+| `OrderItem` | OrderId, ProductId, ProductName, Requested, Accepted, UnitPrice | FK Orders, Products |
+| `Sales` (Sale) | OrderId, CustomerId, Date, Total | OrderId único (uma venda por pedido) |
+| `Receivables` (Receivable) | SaleId, CustomerId, Number, DueDate, Amount, Paid, Revision, PaymentMethod | Revision é token de concorrência; FK Sales |
+| `Receipts` (Receipt) | ReceivableId, RequestId, Amount, Date | RequestId único |
+| `Visits` (Visit) | CustomerId, SellerId, Date, Note | FK Customers |
+| `Audits` (Audit) | ActorId, Date, Action, TargetId | — |
+
+Todas as chaves estrangeiras usam `DeleteBehavior.Restrict`: registros com vínculos não são apagados em cascata.
+
+## Valores derivados
+
+- **Saldo da parcela** = `Amount − Paid` (não é armazenado).
+- **Total do pedido** = soma de `Money(Accepted × UnitPrice)`.
+- **Estoque válido do produto** = soma de `Quantity` dos lotes com `ExpiresOn ≥ hoje`.
+- **Saldo após cada movimentação** = soma acumulada de `Movements.Quantity`, calculada na consulta do histórico.
+
+## Scripts de banco
+
+| Arquivo | Uso |
 | --- | --- |
-| Usuario | Id, identidade de autenticação, ativo; funções e permissões |
-| Vendedor | Id, UsuarioId, nome, ativo |
-| Territorio | Id, nome, ativo; municípios/regiões conforme D04 |
-| AtribuicaoTerritorial | Id, TerritorioId, VendedorId, início, fim; sem sobreposição de exclusividade |
-| Cliente | Id, tipo, documento, razão/nome, ativo, bloqueio e motivo |
-| EnderecoCliente | Id, ClienteId, finalidade, logradouro, número, complemento, bairro, cidade, UF, CEP |
-| CarteiraCliente | Id, ClienteId, VendedorId, TerritorioId, vigência |
-| RoteiroVisita | Id, VendedorId, dia da semana, ativo |
-| ItemRoteiro | Id, RoteiroId, ClienteId, posição |
-| Visita | Id, ClienteId, VendedorId, instante, resultado, observação, PedidoId opcional |
-| Produto | Id, código, descrição, categoria, unidade-base, ativo |
-| Embalagem | Id, ProdutoId, unidade comercial, fator de conversão, múltiplo mínimo |
-| TabelaPreco/ItemPreco | Id, vigência, ProdutoId/EmbalagemId, valor |
-| Promocao | Id, produto/lote elegível, preço/regra, início, fim, aprovação |
-| Deposito | Id, nome, ativo |
-| Lote | Id, ProdutoId, código, validade, bloqueio, origem |
-| MovimentoEstoque | Id, DepositoId, LoteId, tipo, quantidade-base, origem, instante, estornoDeId |
-| ReservaEstoque | Id, ItemPedidoId, DepositoId, LoteId, quantidade-base, estado, RodadaCorteId |
-| JanelaProcessamento | Id, data, horário, estado, fechamento |
-| Pedido | Id, número, ClienteId, VendedorId, JanelaId, estado, coleta, recebimento, versão comercial |
-| ItemPedido | Id, PedidoId, produto/embalagem, preço copiado, quantidades solicitada e aprovada |
-| RodadaCorte/ItemCorte | Id, JanelaId, regra, operador, motivo, solicitado, aprovado e déficit |
-| Separacao/ItemSeparacao | Id, PedidoId, lote, quantidade conferida, estado |
-| Carga/ItemCarga | Id, veículo/motorista ou referências, itens separados, saída |
-| Venda/ItemVenda | Id, PedidoId, itens faturados, valores e condições copiadas |
-| DocumentoFiscal | Id, VendaId, referência externa, chave quando aplicável, estado e ajustes vinculados |
-| Entrega/ItemEntrega | Id, CargaId, VendaId, instante, quantidade aceita/recusada e motivo |
-| Devolucao | Id, origem, lote, quantidade, inspeção, destinação |
-| CondicaoPagamento/RegraParcela | Id, descrição, prazo, percentual, regras versionadas |
-| FormaPagamento | Id, descrição, tipo/instrumento, ativo |
-| TituloReceber | Id, VendaId, sequência, vencimento, valor original, forma, estado |
-| AjusteFinanceiro | Id, TituloId, valor, motivo, ocorrência/documento relacionado |
-| Recebimento/AlocacaoRecebimento | Id, referência, valor, instante; vínculo e valor destinado a cada título |
-| EventoAuditoria | Id, ator, ação, entidade, instante, motivo, correlação e diferenças permitidas |
-| RegistroIdempotencia | Escopo, chave, hash do conteúdo, resultado, PedidoId |
-| EventoOutbox | Id, tipo, conteúdo mínimo, tentativas, próxima execução, estado |
+| `database/postgresql-inicial.sql` | Esquema PostgreSQL completo, gerado pelo modelo EF. Alternativa ao `EnsureCreated`, não um passo extra |
+| `database/postgresql-002-usuario-movimentacao.sql` | Adiciona `Movements.ActorId` em bancos criados antes dessa coluna e preenche pela auditoria. Pode rodar mais de uma vez |
 
-## Cardinalidades centrais
+Para regenerar o esquema PostgreSQL depois de mudar o modelo:
 
-- Cliente 1:N endereços, pedidos e vínculos históricos de carteira.
-- Pedido 1:N itens; item 1:N reservas e registros de separação.
-- Produto 1:N embalagens e lotes; lote pode existir em vários depósitos por movimentos.
-- Venda 1:N itens, documentos, entregas e títulos. MVP propõe uma venda original por pedido; documentos de ajuste não constituem nova venda duplicada.
-- Título N:M recebimentos através de alocações, permitindo pagamentos parciais e um recebimento para vários títulos.
+```powershell
+dotnet run --project tests/Panis360.Tests -- --schema database/postgresql-inicial.sql
+```
 
-## Integridade
-
-1. Restrição única de pedido por UUID e idempotência por escopo/chave.
-2. Exclusividade territorial exige restrição transacional sobre períodos sobrepostos, não apenas índice sobre ativo.
-3. Quantidades não negativas; aprovadas não excedem solicitadas. Demais etapas não excedem sua origem autorizada.
-4. Conversões positivas e versionadas; guardar fator usado na operação.
-5. Valores em decimal, nunca float/double. Precisão e escala finais dependem de D08.
-6. Documento do cliente normalizado e único no contexto da empresa; validação final de PF/PJ depende de D10.
-7. Sequência de parcela única por venda; alocação de recebimento não excede valor disponível nem saldo autorizado.
-8. Restrições de saldo e reserva são garantidas na transação; somas entre linhas exigem estratégia além de CHECK simples.
-9. Saldo de estoque derivado do livro de movimentos; eventual projeção de saldo deve ser reconciliável.
-10. Saldo financeiro = original + débitos − créditos − recebimentos líquidos de estornos. Encargos dependem de regra aprovada.
-
-## Índices a avaliar
-
-Pedidos por janela/estado; títulos por cliente/vencimento/estado; lotes por produto/validade; movimentos por depósito/lote; carteira por vendedor/vigência; outbox por estado/próxima execução. Validar com consultas e volumes reais antes de otimizar.
+Toda alteração de modelo precisa também de um caminho de atualização para bancos existentes: um script numerado em `database/` e/ou um passo idempotente em `SchemaUpgrade.cs`, até a adoção de migrations.
